@@ -12,12 +12,12 @@
 #use i2c(Master, Fast=100000, sda=PIN_C4, scl=PIN_C3, force_hw)
 #include "C:\Users\maico\Downloads\i2c_Flex_LCD.c.txt"
 
-int8 estado = 1;
-int8 mode = 0;             // 0: Bienvenida | 1: Menú bebidas | 2: Preparando | 3: Confirmación
-int8 actualizar_lcd = 1;
+int16 estado = 1;
+int16 mode = 0;             // 0: Bienvenida | 1: Menú bebidas | 2: Preparando | 3: Confirmación
+int16 actualizar_lcd = 1;
 int16 tiempo_bebida = 2500;
-int1 flag_ext = 0;         // bandera que avisa que se presionó RB0
-int1 armado = 0;           // los botones solo valen después de verlos todos sueltos
+int16 flag_ext = 0;         //  Avisa que se presionó RB0
+int16 armado = 0;           // los botones solo valen después de verlos todos sueltos
 
 #define enter     pin_d3
 #define siguiente pin_d2
