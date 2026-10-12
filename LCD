@@ -1,0 +1,292 @@
+#include <16F887.h>
+#device adc=10
+#fuses HS, NOWDT, NOPROTECT, NOLVP
+#use delay(clock=20000000)
+
+#byte puerto_a = 5
+#byte puerto_b = 6
+#byte puerto_c = 7
+#byte puerto_d = 8
+#byte puerto_e = 9
+
+#use i2c(Master, Fast=100000, sda=PIN_C4, scl=PIN_C3, force_hw)
+#include "C:\Users\maico\Downloads\i2c_Flex_LCD.c.txt"
+
+int16 estado = 1;          
+int16 mode = 0;           // 0: Bienvenida | 1: Menú bebidas | 2: Preparando | 3: Confirmación
+int16 actualizar_lcd = 1;  
+int16 tiempo_bebida = 2500;
+
+#define enter     pin_d3
+#define siguiente pin_d2
+#define anterior  pin_d1
+#define confirmar pin_b1
+
+// Declaración de funciones
+void menu1();
+void menu2();
+void view();
+void nombre_bebida();
+void funcion_interrumpir();
+void funcion_siguiente();
+void funcion_anterior();
+void funcion_enter();
+void funcion_confirmar();
+
+// Interrupción externa (Botón RB0)
+#INT_EXT
+void Ext_isr(void)
+{
+   delay_ms(15);                  // Breve pausa para limpiar el ruido del botón
+   if(input(PIN_B0) == 0)         // Verifica que el botón siga presionado
+   {
+      funcion_interrumpir();      
+   }
+   clear_interrupt(INT_EXT);
+}
+
+void main()
+{
+   setup_adc_ports(NO_ANALOGS);    
+   port_b_pullups(0x03);            // Activa pull-up en RB0 y RB1
+
+   set_tris_b(0x0F);                // RB0-RB3 como entradas
+   set_tris_d(0x0E);                // RD1, RD2, RD3 entradas; RD0 y RD4-RD7 salidas
+   puerto_d = 0x00;
+
+   delay_ms(10);
+   lcd_init(0x4E, 20, 4);          
+   lcd_backlight_led(ON);          
+
+   clear_interrupt(INT_EXT);
+   enable_interrupts(INT_EXT);
+   enable_interrupts(GLOBAL);
+
+   while(TRUE)
+   {
+      // 1. MENÚ PRINCIPAL (Bienvenida)
+      if(mode == 0)
+      {
+         if(actualizar_lcd == 1)
+         {
+            printf(lcd_putc,"\fDigitales 3 UPN");
+            lcd_gotoxy(1, 2);
+            printf(lcd_putc,"\nMenu Principal");
+            lcd_gotoxy(1, 3);
+            printf(lcd_putc,"\nPresione Boton Rojo");
+            actualizar_lcd = 0;
+         }
+      }
+
+      // 2. MENÚ INTERACTIVO DE BEBIDAS
+      else if(mode == 1)
+      {
+         if(actualizar_lcd == 1)
+         {
+            menu1();
+            view();
+            actualizar_lcd = 0;
+         }
+
+         funcion_siguiente();
+         funcion_anterior();
+         funcion_enter(); 
+      } 
+
+      // 3. MENÚ DE CONFIRMACIÓN
+      else if(mode == 3)
+      {
+         if(actualizar_lcd == 1)
+         {
+            menu2();
+            lcd_gotoxy(1, 2);
+            nombre_bebida();
+            actualizar_lcd = 0;
+         }
+
+         funcion_confirmar(); 
+      }
+
+      // 4. PREPARANDO BEBIDA
+      else if(mode == 2)
+      {
+         printf(lcd_putc, "\fPreparando...");
+         lcd_gotoxy(1, 2);
+         nombre_bebida();                    
+
+         puerto_d = (estado << 4);      
+         output_high(PIN_D0);            
+
+         // --- SIMULACIÓN DE BARRA GRÁFICA ---
+         int16 tiempo_etapa = tiempo_bebida / 4;
+
+         lcd_gotoxy(1, 4);
+         printf(lcd_putc, "[          ] 0%%");
+
+         delay_ms(tiempo_etapa);
+         lcd_gotoxy(2, 4);
+         printf(lcd_putc, "\xFF\xFF\xFF");       // 30% aprox
+         lcd_gotoxy(13, 4);
+         printf(lcd_putc, "25%%");
+
+         delay_ms(tiempo_etapa);
+         lcd_gotoxy(2, 4);
+         printf(lcd_putc, "\xFF\xFF\xFF\xFF\xFF"); // 50% aprox
+         lcd_gotoxy(13, 4);
+         printf(lcd_putc, "50%%");
+
+         delay_ms(tiempo_etapa);
+         lcd_gotoxy(2, 4);
+         printf(lcd_putc, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF"); // 75% aprox
+         lcd_gotoxy(13, 4);
+         printf(lcd_putc, "75%%");
+
+         delay_ms(tiempo_etapa);
+         lcd_gotoxy(2, 4);
+         printf(lcd_putc, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"); // 100% lleno
+         lcd_gotoxy(12, 4);
+         printf(lcd_putc, "100%%");
+         delay_ms(1000);
+
+         puerto_d = 0x00;                
+         printf(lcd_putc, "\fBebida lista!");
+         lcd_gotoxy(1, 2);
+         printf(lcd_putc, "\nGracias vuelve");
+         printf(lcd_putc, "\nPronto:)");
+         delay_ms(2000);
+
+         // Reactiva la interrupción para que no se quede bloqueada al volver
+         clear_interrupt(INT_EXT);
+         enable_interrupts(INT_EXT);
+
+         mode = 0;                       
+         actualizar_lcd = 1;
+      }
+   }
+}
+
+// ----------------------------------------------------
+// DEFINICIÓN DE FUNCIONES
+// ----------------------------------------------------
+
+void funcion_interrumpir(void)
+{
+   if(mode == 0)
+   {
+      mode = 1;
+      estado = 1;
+   }
+   else if(mode == 3) 
+   {
+      mode = 1; // Vuelve al menú de selección de bebidas
+   }
+   else if(mode == 1)
+   {
+      mode = 0; // Vuelve al menú principal
+   }
+   else 
+   {
+      mode = 0;
+      puerto_d = 0x00; 
+   }
+   actualizar_lcd = 1;
+}
+
+void funcion_siguiente(void)
+{
+   if(input(siguiente) == 0)
+   {
+      delay_ms(20);
+      if(input(siguiente) == 0)
+      {
+         estado++;
+         if(estado > 7) { estado = 1; }
+         view();
+         delay_ms(150); // Pausa corta para evitar doble conteo
+      }
+   }
+}
+
+void funcion_anterior(void)
+{
+   if(input(anterior) == 0)
+   {
+      delay_ms(20);
+      if(input(anterior) == 0)
+      {
+         estado--;
+         if(estado < 1) { estado = 7; }
+         view();
+         delay_ms(150);
+      }
+   }
+}
+
+void funcion_enter(void)
+{
+   if(input(enter) == 0)
+   {
+      delay_ms(20);
+      if(input(enter) == 0)
+      {
+         mode = 3;          
+         actualizar_lcd = 1;
+         delay_ms(150);
+      }
+   }
+}
+
+void funcion_confirmar(void)
+{
+   if(input(confirmar) == 0)
+   {
+      delay_ms(20);
+      if(input(confirmar) == 0)
+      {
+         mode = 2;          
+         actualizar_lcd = 1;
+         delay_ms(150);
+      }
+   }
+}
+
+void menu1()
+{
+   printf(lcd_putc,"\fElige tu bebida:");
+   lcd_gotoxy(1, 3);
+   printf(lcd_putc,"\nOprime Sig/Ant");
+   lcd_gotoxy(1, 4);
+   printf(lcd_putc,"\nOprime Enter");
+}
+
+void menu2()
+{
+   printf(lcd_putc,"\fConfirma tu bebida:");
+   lcd_gotoxy(1, 3);
+   printf(lcd_putc,"Boton Blanco = Si");  
+   lcd_gotoxy(1, 4);                        
+   printf(lcd_putc,"Boton Rojo  = No");    
+}
+
+void view()
+{
+   lcd_gotoxy(1, 2);
+        if(estado == 1) { printf(lcd_putc, "1. Jugo             "); }
+   else if(estado == 2) { printf(lcd_putc, "2. Milo             "); }
+   else if(estado == 3) { printf(lcd_putc, "3. Agua             "); }
+   else if(estado == 4) { printf(lcd_putc, "4. Aromatica        "); }
+   else if(estado == 5) { printf(lcd_putc, "5. Chocolisto       "); }
+   else if(estado == 6) { printf(lcd_putc, "6. Gaseosa          "); }
+   else if(estado == 7) { printf(lcd_putc, "7. Americano        "); }
+}
+
+void nombre_bebida()
+{
+        if(estado == 1) { printf(lcd_putc, "Jugo"); }
+   else if(estado == 2) { printf(lcd_putc, "Milo"); }
+   else if(estado == 3) { printf(lcd_putc, "Agua"); }
+   else if(estado == 4) { printf(lcd_putc, "Aromatica"); }
+   else if(estado == 5) { printf(lcd_putc, "Chocolisto"); }
+   else if(estado == 6) { printf(lcd_putc, "Gaseosa"); }
+   else if(estado == 7) { printf(lcd_putc, "Americano"); }
+}
